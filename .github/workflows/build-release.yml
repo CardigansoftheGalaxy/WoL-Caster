@@ -1,0 +1,471 @@
+#!/usr/bin/env python3
+"""
+WoL-Caster Build Script
+Builds executables for all platforms with smart installers
+"""
+
+import os
+import sys
+import platform
+import subprocess
+import shutil
+from pathlib import Path
+
+class WoLCasterBuilder:
+    def __init__(self):
+        self.root_dir = Path(__file__).parent.parent
+        self.dist_dir = self.root_dir / "dist"
+        self.build_dir = self.root_dir / "build"
+        self.assets_dir = self.root_dir / "assets"
+        
+        # Create directories
+        self.dist_dir.mkdir(exist_ok=True)
+        self.build_dir.mkdir(exist_ok=True)
+        self.assets_dir.mkdir(exist_ok=True)
+        
+        self.platform_name = platform.system().lower()
+        
+    def clean_build(self):
+        """Clean previous build artifacts."""
+        print("🧹 Cleaning previous builds...")
+        if self.dist_dir.exists():
+            shutil.rmtree(self.dist_dir)
+        if self.build_dir.exists():
+            shutil.rmtree(self.build_dir)
+        
+        self.dist_dir.mkdir()
+        print("✅ Build directories cleaned")
+    
+    def install_dependencies(self):
+        """Install build dependencies."""
+        print("📦 Installing build dependencies...")
+        
+        subprocess.run([
+            sys.executable, "-m", "pip", "install", "--upgrade", 
+            "pyinstaller", "wheel", "setuptools"
+        ], check=True)
+        
+        # Install project requirements
+        requirements_file = self.root_dir / "requirements.txt"
+        if requirements_file.exists():
+            subprocess.run([
+                sys.executable, "-m", "pip", "install", "-r", str(requirements_file)
+            ], check=True)
+        
+        print("✅ Dependencies installed")
+    
+    def create_icons(self):
+        """Create application icons if they don't exist."""
+        print("🎨 Setting up application icons...")
+        
+        # Create a simple icon placeholder if none exists
+        if not (self.assets_dir / "icon.ico").exists():
+            print("ℹ️  No custom icon found, using default")
+        
+        print("✅ Icons ready")
+    
+    def build_with_pyinstaller(self):
+        """Build executables using PyInstaller."""
+        print("🔨 Building executables with PyInstaller...")
+        
+        spec_file = self.root_dir / "wol-caster.spec"
+        
+        if not spec_file.exists():
+            print("❌ wol-caster.spec not found!")
+            return False
+        
+        try:
+            # Run PyInstaller
+            cmd = [sys.executable, "-m", "PyInstaller", str(spec_file), "--clean"]
+            
+            result = subprocess.run(cmd, cwd=self.root_dir, check=True, 
+                                  capture_output=True, text=True)
+            
+            print("✅ PyInstaller build completed")
+            return True
+            
+        except subprocess.CalledProcessError as e:
+            print(f"❌ PyInstaller failed: {e}")
+            print(f"Output: {e.stdout}")
+            print(f"Error: {e.stderr}")
+            return False
+    
+    def create_installers(self):
+        """Create platform-specific installers."""
+        print("📋 Creating installers...")
+        
+        release_dir = self.dist_dir / "release"
+        release_dir.mkdir(exist_ok=True)
+        
+        # Copy executables
+        main_dist = self.dist_dir / "WoL-Caster"
+        if main_dist.exists():
+            if self.platform_name == "windows":
+                self._create_windows_installer(release_dir)
+            else:
+                self._create_unix_installer(release_dir)
+        
+        # Copy additional files
+        for file_name in ["README.md", "LICENSE", "requirements.txt"]:
+            src = self.root_dir / file_name
+            if src.exists():
+                shutil.copy2(src, release_dir)
+        
+        print("✅ Installers created")
+    
+    def _create_windows_installer(self, release_dir):
+        """Create Windows installer batch file."""
+        main_dist = self.dist_dir / "WoL-Caster"
+        
+        # Copy executables
+        for exe in main_dist.glob("*.exe"):
+            shutil.copy2(exe, release_dir)
+        
+        # Create installer batch file
+        installer_content = '''@echo off
+echo.
+echo ========================================
+echo   WoL-Caster Installation Script
+echo ========================================
+echo.
+
+set "INSTALL_DIR=%USERPROFILE%\\AppData\\Local\\Microsoft\\WindowsApps"
+set "DESKTOP_DIR=%USERPROFILE%\\Desktop"
+
+echo Installing WoL-Caster to user PATH...
+echo.
+
+REM Copy executables to user PATH
+copy /Y "WoL-Caster.exe" "%INSTALL_DIR%\\wol.exe" >nul 2>&1
+copy /Y "WoL-Caster.exe" "%INSTALL_DIR%\\wol-cast.exe" >nul 2>&1
+copy /Y "WoL-Caster.exe" "%INSTALL_DIR%\\wol-caster.exe" >nul 2>&1
+
+REM Create desktop shortcuts for GUI versions
+if exist "WoL-Caster-GUI.exe" (
+    copy /Y "WoL-Caster-GUI.exe" "%DESKTOP_DIR%\\WoL-Caster.exe" >nul 2>&1
+    echo Desktop shortcut created: WoL-Caster.exe
+)
+
+echo.
+echo ✅ Installation Complete!
+echo.
+echo You can now use these commands:
+echo   - wol           (smart mode detection)
+echo   - wol-cast      (alternative name)  
+echo   - wol-caster    (full name)
+echo.
+echo GUI version available on desktop: WoL-Caster.exe
+echo.
+echo Press any key to exit...
+pause >nul
+'''
+        
+        installer_path = release_dir / "install.bat"
+        installer_path.write_text(installer_content, encoding='utf-8')
+        
+        # Create uninstaller
+        uninstaller_content = '''@echo off
+echo.
+echo ========================================
+echo   WoL-Caster Uninstaller
+echo ========================================
+echo.
+
+set "INSTALL_DIR=%USERPROFILE%\\AppData\\Local\\Microsoft\\WindowsApps"
+set "DESKTOP_DIR=%USERPROFILE%\\Desktop"
+
+echo Removing WoL-Caster...
+
+del /Q "%INSTALL_DIR%\\wol.exe" 2>nul
+del /Q "%INSTALL_DIR%\\wol-cast.exe" 2>nul  
+del /Q "%INSTALL_DIR%\\wol-caster.exe" 2>nul
+del /Q "%DESKTOP_DIR%\\WoL-Caster.exe" 2>nul
+
+echo.
+echo ✅ WoL-Caster removed successfully!
+echo.
+pause
+'''
+        
+        uninstaller_path = release_dir / "uninstall.bat"
+        uninstaller_path.write_text(uninstaller_content, encoding='utf-8')
+    
+    def _create_unix_installer(self, release_dir):
+        """Create Unix installer shell script."""
+        main_dist = self.dist_dir / "WoL-Caster"
+        
+        # Copy executables
+        for exe in main_dist.iterdir():
+            if exe.is_file() and not exe.name.endswith('.so'):
+                dest = release_dir / exe.name
+                shutil.copy2(exe, dest)
+                # Make executable
+                os.chmod(dest, 0o755)
+        
+        # Copy macOS app bundle if it exists
+        app_bundle = self.dist_dir / "WoL-Caster.app"
+        if app_bundle.exists():
+            shutil.copytree(app_bundle, release_dir / "WoL-Caster.app")
+        
+        # Create installer script
+        installer_content = '''#!/bin/bash
+
+echo
+echo "========================================"
+echo "   WoL-Caster Installation Script"
+echo "========================================"
+echo
+
+# Detect system
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    SYSTEM="macOS"
+    INSTALL_DIR="/usr/local/bin"
+    APP_DIR="/Applications"
+    NEED_SUDO=true
+elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    SYSTEM="Linux"
+    INSTALL_DIR="$HOME/.local/bin"
+    NEED_SUDO=false
+else
+    SYSTEM="Unix"
+    INSTALL_DIR="/usr/local/bin"  
+    NEED_SUDO=true
+fi
+
+echo "Detected system: $SYSTEM"
+echo "Installation directory: $INSTALL_DIR"
+echo
+
+# Create install directory if needed
+if [ "$NEED_SUDO" = false ]; then
+    mkdir -p "$INSTALL_DIR"
+else
+    if ! sudo -n true 2>/dev/null; then
+        echo "This installer requires sudo privileges to install to $INSTALL_DIR"
+        echo "You may be prompted for your password."
+        echo
+    fi
+fi
+
+# Install function
+install_executable() {
+    local src="$1"
+    local dst="$2"
+    
+    if [ "$NEED_SUDO" = true ]; then
+        sudo cp "$src" "$dst" && sudo chmod +x "$dst"
+    else
+        cp "$src" "$dst" && chmod +x "$dst"
+    fi
+}
+
+echo "Installing WoL-Caster..."
+
+# Install main executable with different names
+if [ -f "WoL-Caster" ]; then
+    install_executable "WoL-Caster" "$INSTALL_DIR/wol"
+    install_executable "WoL-Caster" "$INSTALL_DIR/wol-cast"  
+    install_executable "WoL-Caster" "$INSTALL_DIR/wol-caster"
+    echo "✅ Command-line tools installed"
+fi
+
+# Install macOS app bundle
+if [[ "$SYSTEM" == "macOS" ]] && [ -d "WoL-Caster.app" ]; then
+    if sudo cp -r "WoL-Caster.app" "$APP_DIR/" 2>/dev/null; then
+        echo "✅ WoL-Caster.app installed to Applications"
+    else
+        echo "⚠️  Could not install app bundle (requires admin privileges)"
+    fi
+fi
+
+echo
+echo "✅ Installation Complete!"
+echo
+echo "You can now use these commands:"
+echo "  - wol           (smart mode detection)"
+echo "  - wol-cast      (alternative name)"
+echo "  - wol-caster    (full name)"
+echo
+
+if [ "$NEED_SUDO" = false ]; then
+    echo "Note: Make sure $INSTALL_DIR is in your PATH"
+    echo "Add this line to your ~/.bashrc or ~/.zshrc:"
+    echo "export PATH=\"$INSTALL_DIR:\\$PATH\""
+    echo
+fi
+
+if [[ "$SYSTEM" == "macOS" ]]; then
+    echo "macOS users can also launch from Applications folder or Spotlight"
+fi
+
+echo "Installation directory: $INSTALL_DIR"
+echo
+'''
+        
+        installer_path = release_dir / "install.sh"
+        installer_path.write_text(installer_content)
+        os.chmod(installer_path, 0o755)
+        
+        # Create uninstaller
+        uninstaller_content = '''#!/bin/bash
+
+echo
+echo "========================================"
+echo "   WoL-Caster Uninstaller"
+echo "========================================"
+echo
+
+# Detect system
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    SYSTEM="macOS"
+    INSTALL_DIR="/usr/local/bin"
+    APP_DIR="/Applications"
+    NEED_SUDO=true
+elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    SYSTEM="Linux"  
+    INSTALL_DIR="$HOME/.local/bin"
+    NEED_SUDO=false
+else
+    SYSTEM="Unix"
+    INSTALL_DIR="/usr/local/bin"
+    NEED_SUDO=true
+fi
+
+echo "Detected system: $SYSTEM"
+echo "Removing WoL-Caster..."
+
+# Remove function
+remove_file() {
+    local file="$1"
+    if [ "$NEED_SUDO" = true ]; then
+        sudo rm -f "$file"
+    else
+        rm -f "$file"
+    fi
+}
+
+# Remove executables
+remove_file "$INSTALL_DIR/wol"
+remove_file "$INSTALL_DIR/wol-cast" 
+remove_file "$INSTALL_DIR/wol-caster"
+
+# Remove macOS app bundle
+if [[ "$SYSTEM" == "macOS" ]]; then
+    sudo rm -rf "$APP_DIR/WoL-Caster.app" 2>/dev/null
+fi
+
+echo
+echo "✅ WoL-Caster removed successfully!"
+echo
+'''
+        
+        uninstaller_path = release_dir / "uninstall.sh"
+        uninstaller_path.write_text(uninstaller_content)
+        os.chmod(uninstaller_path, 0o755)
+    
+    def create_archive(self):
+        """Create distributable archive."""
+        print("📦 Creating distribution archive...")
+        
+        release_dir = self.dist_dir / "release"
+        
+        if self.platform_name == "windows":
+            archive_name = f"WoL-Caster-Windows"
+            shutil.make_archive(
+                str(self.dist_dir / archive_name), 
+                'zip', 
+                str(release_dir)
+            )
+            print(f"✅ Created {archive_name}.zip")
+        else:
+            if self.platform_name == "darwin":
+                archive_name = f"WoL-Caster-macOS"
+            else:
+                archive_name = f"WoL-Caster-Linux"
+            
+            shutil.make_archive(
+                str(self.dist_dir / archive_name), 
+                'gztar', 
+                str(release_dir)
+            )
+            print(f"✅ Created {archive_name}.tar.gz")
+    
+    def test_build(self):
+        """Test the built executables."""
+        print("🧪 Testing built executables...")
+        
+        release_dir = self.dist_dir / "release"
+        
+        if self.platform_name == "windows":
+            exe_path = release_dir / "WoL-Caster.exe"
+        else:
+            exe_path = release_dir / "WoL-Caster"
+        
+        if exe_path.exists():
+            try:
+                # Test version command
+                result = subprocess.run([str(exe_path), "--version"], 
+                                      capture_output=True, text=True, timeout=10)
+                if result.returncode == 0:
+                    print("✅ Executable test passed")
+                    return True
+                else:
+                    print(f"❌ Executable test failed: {result.stderr}")
+                    return False
+            except Exception as e:
+                print(f"❌ Could not test executable: {e}")
+                return False
+        else:
+            print("❌ Executable not found for testing")
+            return False
+    
+    def build_all(self):
+        """Build complete distribution package."""
+        print(f"🚀 Starting WoL-Caster build for {self.platform_name}...")
+        print("="*50)
+        
+        try:
+            self.clean_build()
+            self.install_dependencies()
+            self.create_icons()
+            
+            if not self.build_with_pyinstaller():
+                return False
+            
+            self.create_installers()
+            self.create_archive()
+            
+            if not self.test_build():
+                print("⚠️  Build completed but tests failed")
+                return False
+            
+            print("="*50)
+            print("✅ Build completed successfully!")
+            print(f"📁 Distribution files in: {self.dist_dir}")
+            
+            # List created files
+            print("\n📋 Created files:")
+            for file in self.dist_dir.glob("WoL-Caster-*.*"):
+                print(f"  📦 {file.name} ({file.stat().st_size // 1024}KB)")
+            
+            return True
+            
+        except Exception as e:
+            print(f"❌ Build failed: {e}")
+            return False
+
+def main():
+    """Main build script entry point."""
+    builder = WoLCasterBuilder()
+    
+    # Check if we're in the right directory
+    if not (builder.root_dir / "wol_caster.py").exists():
+        print("❌ Error: wol_caster.py not found!")
+        print("Please run this script from the project root directory")
+        sys.exit(1)
+    
+    success = builder.build_all()
+    sys.exit(0 if success else 1)
+
+if __name__ == "__main__":
+    main()
