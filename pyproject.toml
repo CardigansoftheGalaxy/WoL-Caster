@@ -1,0 +1,80 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wol-caster"
+dynamic = ["version"]
+description = "A powerful, intelligent cross-platform utility that automatically detects all your network interfaces and broadcasts Wake-on-LAN magic packets"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Cardigans of the Galaxy"},
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: System Administrators",
+    "Intended Audience :: Information Technology", 
+    "Topic :: System :: Networking",
+    "Topic :: System :: Systems Administration",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.6",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8", 
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Environment :: Console",
+    "Environment :: X11 Applications :: Qt",
+]
+keywords = [
+    "wake-on-lan",
+    "wol", 
+    "network",
+    "broadcasting",
+    "magic-packet",
+    "network-administration"
+]
+dependencies = [
+    "netifaces>=0.11.0",
+    "ipaddress>=1.0.23; python_version < '3.3'",
+    "pyobjc-framework-Cocoa>=9.0; sys_platform == 'darwin'",
+]
+requires-python = ">=3.6"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=6.0",
+    "pytest-cov",
+    "black",
+    "flake8", 
+    "pyinstaller",
+]
+
+[project.urls]
+Homepage = "https://github.com/CardigansoftheGalaxy/wol-caster"
+"Bug Tracker" = "https://github.com/CardigansoftheGalaxy/wol-caster/issues"
+Documentation = "https://github.com/CardigansoftheGalaxy/wol-caster"
+"Source Code" = "https://github.com/CardigansoftheGalaxy/wol-caster"
+
+[project.scripts]
+wol = "wol_caster:main"
+wol-cast = "wol_caster:main"
+wol-caster = "wol_caster:main"
+wolcast = "wol_caster:main"
+wolcaster = "wol_caster:main"
+
+[tool.setuptools_scm]
+
+[tool.black]
+line-length = 88
+target-version = ['py36', 'py37', 'py38', 'py39', 'py310', 'py311']
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]

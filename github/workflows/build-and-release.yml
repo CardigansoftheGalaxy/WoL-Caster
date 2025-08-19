@@ -1,0 +1,214 @@
+name: Build and Release WoL-Caster
+
+on:
+  push:
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.6, 3.7, 3.8, 3.9, "3.10", "3.11", "3.12"]
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-cov flake8 black
+    
+    - name: Lint with flake8
+      run: |
+        # Stop the build if there are Python syntax errors or undefined names
+        flake8 wol_caster.py --count --select=E9,F63,F7,F82 --show-source --statistics
+        # Exit-zero treats all errors as warnings
+        flake8 wol_caster.py --count --exit-zero --max-complexity=10 --max-line-length=88 --statistics
+    
+    - name: Check code formatting with black
+      run: |
+        black --check wol_caster.py
+    
+    - name: Test import and basic functionality
+      run: |
+        python -c "import wol_caster; print('Import successful')"
+        python wol_caster.py --version
+        python wol_caster.py --help
+
+  build:
+    needs: test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            artifact_name: WoL-Caster-Linux
+            asset_name: WoL-Caster-Linux.tar.gz
+          - os: windows-latest  
+            artifact_name: WoL-Caster-Windows
+            asset_name: WoL-Caster-Windows.zip
+          - os: macos-latest
+            artifact_name: WoL-Caster-macOS
+            asset_name: WoL-Caster-macOS.tar.gz
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python 3.9
+      uses: actions/setup-python@v4
+      with:
+        python-version: 3.9
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
+    
+    - name: Install Linux dependencies
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y python3-tk
+    
+    - name: Build with PyInstaller (Linux/macOS)
+      if: runner.os != 'Windows'
+      run: |
+        pyinstaller wol-caster.spec
+        # Create archive
+        cd dist
+        if [[ "${{ runner.os }}" == "macOS" ]]; then
+          tar -czf ../WoL-Caster-macOS.tar.gz WoL-Caster* *.app
+        else
+          tar -czf ../WoL-Caster-Linux.tar.gz WoL-Caster*
+        fi
+    
+    - name: Build with PyInstaller (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        pyinstaller wol-caster.spec
+        # Create zip
+        cd dist
+        7z a ../WoL-Caster-Windows.zip WoL-Caster*
+    
+    - name: Create installer package (Linux/macOS)
+      if: runner.os != 'Windows'
+      run: |
+        mkdir -p installer
+        cp dist/WoL-Caster* installer/
+        if [[ "${{ runner.os }}" == "macOS" ]] && [[ -d "dist/WoL-Caster.app" ]]; then
+          cp -R dist/WoL-Caster.app installer/
+        fi
+        cp install.sh installer/
+        cp README.md installer/
+        cp LICENSE installer/
+        cd installer
+        if [[ "${{ runner.os }}" == "macOS" ]]; then
+          tar -czf ../WoL-Caster-macOS.tar.gz *
+        else
+          tar -czf ../WoL-Caster-Linux.tar.gz *
+        fi
+    
+    - name: Create installer package (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        mkdir installer
+        copy dist\WoL-Caster* installer\
+        copy install.bat installer\
+        copy README.md installer\
+        copy LICENSE installer\
+        cd installer
+        7z a ..\WoL-Caster-Windows.zip *
+    
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: ${{ matrix.artifact_name }}
+        path: ${{ matrix.asset_name }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v3
+    
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: WoL-Caster ${{ github.ref }}
+        draft: false
+        prerelease: false
+        body: |
+          ## WoL-Caster Release
+          
+          Wake-on-LAN Network Broadcaster - Cross-platform utility for broadcasting magic packets to all devices on all network subnets.
+          
+          ### Downloads
+          - **Windows**: Download `WoL-Caster-Windows.zip`
+          - **macOS**: Download `WoL-Caster-macOS.tar.gz`
+          - **Linux**: Download `WoL-Caster-Linux.tar.gz`
+          
+          ### Installation
+          1. Extract the downloaded archive
+          2. Run the installer:
+             - Windows: Double-click `install.bat` (run as administrator)
+             - macOS/Linux: `chmod +x install.sh && ./install.sh`
+          3. Use commands: `wol`, `wol-cast`, or `wol-caster`
+          
+          ### Features
+          - 🌐 Auto-detects all network interfaces
+          - 🎯 Smart broadcasting to every IP in each subnet
+          - 💻 Cross-platform support (Windows, macOS, Linux)
+          - 🧠 Smart GUI/CLI mode detection
+          - ⚡ Fast concurrent packet delivery
+          
+          For detailed documentation, see the [README](https://github.com/CardigansoftheGalaxy/wol-caster/blob/main/README.md).
+    
+    - name: Upload Windows Release Asset
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./WoL-Caster-Windows/WoL-Caster-Windows.zip
+        asset_name: WoL-Caster-Windows.zip
+        asset_content_type: application/zip
+    
+    - name: Upload macOS Release Asset
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./WoL-Caster-macOS/WoL-Caster-macOS.tar.gz
+        asset_name: WoL-Caster-macOS.tar.gz
+        asset_content_type: application/gzip
+    
+    - name: Upload Linux Release Asset
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./WoL-Caster-Linux/WoL-Caster-Linux.tar.gz
+        asset_name: WoL-Caster-Linux.tar.gz
+        asset_content_type: application/gzip
